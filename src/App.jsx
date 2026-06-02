@@ -63,9 +63,12 @@ function App() {
     }
   }, [isAuthenticated]);
 
+  const AUTH_API = import.meta.env.VITE_AUTH_API_URL || '';
+  const DUBBING_API = import.meta.env.VITE_DUBBING_API_URL || '';
+
   const fetchProfile = async () => {
     try {
-      const res = await axios.get('/user/profile');
+      const res = await axios.get(`${AUTH_API}/user/profile`);
       setUserProfile(res.data);
       setNewUsername(res.data.username);
     } catch (e) {
@@ -84,7 +87,7 @@ function App() {
 
   const handleUpdateProfile = async () => {
     try {
-      await axios.post('/user/update', { username: newUsername });
+      await axios.post(`${AUTH_API}/user/update`, { username: newUsername });
       setUserProfile({ ...userProfile, username: newUsername });
       setIsEditingProfile(false);
     } catch (e) {
@@ -97,7 +100,7 @@ function App() {
       const formData = new FormData();
       formData.append('file', e.target.files[0]);
       try {
-        const res = await axios.post('/user/upload-dp', formData, {
+        const res = await axios.post(`${AUTH_API}/user/upload-dp`, formData, {
           headers: { 'Content-Type': 'multipart/form-data' }
         });
         setUserProfile({ ...userProfile, profile_picture: res.data.profile_picture });
@@ -157,7 +160,7 @@ function App() {
       const videoUrl = cloudRes.data.secure_url;
 
       // 2. Send Cloudinary URL to Backend
-      const backendRes = await axios.post('/upload/cloud', {
+      const backendRes = await axios.post(`${DUBBING_API}/upload/cloud`, {
         video_url: videoUrl,
         target_langs: selectedLangs.join(','),
         filename: file.name,
@@ -180,12 +183,31 @@ function App() {
     if (jobId && isProcessing) {
       interval = setInterval(async () => {
         try {
-          const res = await axios.get(`/status/${jobId}`);
+          const res = await axios.get(`${DUBBING_API}/status/${jobId}`);
           setStatusMap(res.data);
           
           if (res.data.status.includes('Completed') || res.data.status.includes('Failed')) {
             setIsProcessing(false);
             clearInterval(interval);
+            
+            if (res.data.status.includes('Completed') && res.data.completed) {
+              const token = localStorage.getItem('token');
+              Object.keys(res.data.completed).forEach(async (lang) => {
+                try {
+                  await axios.post(`${AUTH_API}/history`, {
+                    video_filename: file ? file.name : "dubbed_video.mp4",
+                    selected_language: lang,
+                    output_file_path: res.data.completed[lang],
+                    include_subtitles: includeSubtitles ? 1 : 0,
+                    voice_preference: voicePreference
+                  }, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                  });
+                } catch (err) {
+                  console.error('Failed to save history for', lang, err);
+                }
+              });
+            }
           }
         } catch (e) {
           console.error(e);
@@ -205,7 +227,7 @@ function App() {
     console.log("Fetching history...");
     try {
       const token = localStorage.getItem('token');
-      const res = await axios.get('/history', {
+      const res = await axios.get(`${AUTH_API}/history`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       console.log("History response received:", res.data);
@@ -472,7 +494,7 @@ function App() {
                   <div key={lang} className="glass-panel video-card fade-in">
                     <video 
                       controls 
-                      src={`/download/${jobId}/${lang}`} 
+                      src={`${DUBBING_API}/download/${jobId}/${lang}`} 
                       crossOrigin="anonymous"
                       poster=""
                       onTimeUpdate={(e) => setVideoTime(e.target.currentTime)}
@@ -482,7 +504,7 @@ function App() {
                           label={`${lang} Dub`} 
                           kind="subtitles" 
                           srcLang={lang.substring(0,2).toLowerCase()} 
-                          src={`/subtitle/${jobId}/${lang}`} 
+                          src={`${DUBBING_API}/subtitle/${jobId}/${lang}`} 
                           default 
                         />
                       )}
@@ -493,7 +515,7 @@ function App() {
                     <div className="video-info">
                       <span style={{ fontWeight: 600, fontSize: '1.125rem' }}>{lang} Dub</span>
                       <a 
-                        href={`/download/${jobId}/${lang}`}
+                        href={`${DUBBING_API}/download/${jobId}/${lang}`}
                         download={`dubbed_${lang}.mp4`}
                         className="btn-download"
                       >
