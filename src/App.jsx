@@ -240,12 +240,20 @@ function App() {
       
       const [authRes, hfRes] = await Promise.all([authPromise, hfPromise]);
       
+      // Safely extract arrays (prevents crashes if endpoints return 404 HTML or error objects)
+      const authData = (authRes && Array.isArray(authRes.data)) ? authRes.data : [];
+      const hfData = (hfRes && Array.isArray(hfRes.data)) ? hfRes.data : [];
+      
       // Merge and deduplicate
-      const merged = [...authRes.data, ...hfRes.data];
-      const unique = Array.from(new Map(merged.map(item => [item.filename + item.language, item])).values());
+      const merged = [...authData, ...hfData];
+      const unique = Array.from(new Map(merged.map(item => {
+        // Safe check to ensure valid item
+        if (!item || !item.filename) return ['invalid', item];
+        return [item.filename + item.language, item];
+      })).values()).filter(item => item && item.filename);
       
       // Sort descending by timestamp
-      unique.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      unique.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
       
       console.log("Merged history response received:", unique);
       setHistoryData(unique);
