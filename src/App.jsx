@@ -227,11 +227,28 @@ function App() {
     console.log("Fetching history...");
     try {
       const token = localStorage.getItem('token');
-      const res = await axios.get(`${AUTH_API}/history`, {
+      
+      // Fetch new centralized history from Render
+      const authPromise = axios.get(`${AUTH_API}/history`, {
         headers: { 'Authorization': `Bearer ${token}` }
-      });
-      console.log("History response received:", res.data);
-      setHistoryData(res.data);
+      }).catch(() => ({ data: [] }));
+
+      // Fetch previously dubbed videos trapped in Hugging Face local storage
+      const hfPromise = axios.get(`${DUBBING_API}/history_hf`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      }).catch(() => ({ data: [] }));
+      
+      const [authRes, hfRes] = await Promise.all([authPromise, hfPromise]);
+      
+      // Merge and deduplicate
+      const merged = [...authRes.data, ...hfRes.data];
+      const unique = Array.from(new Map(merged.map(item => [item.filename + item.language, item])).values());
+      
+      // Sort descending by timestamp
+      unique.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      
+      console.log("Merged history response received:", unique);
+      setHistoryData(unique);
     } catch (e) {
       console.error("Error fetching history:", e);
     }
